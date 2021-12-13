@@ -1,0 +1,1326 @@
+USE [TracNghiem]
+GO
+
+/****** Object:  Table [dbo].[BAITHI]    Script Date: 11/29/2021 9:55:32 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[BAITHI](
+	[CauHoi] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[CauSo] [int] NOT NULL,
+	[NoiDung] [ntext] NULL,
+	[A] [ntext] NULL,
+	[B] [ntext] NULL,
+	[C] [ntext] NULL,
+	[D] [ntext] NULL,
+	[DapAn] [nchar](1) NOT NULL,
+	[DaChon] [nchar](1) NULL,
+	[MaBD] [int] NOT NULL,
+	[rowguid] [uniqueidentifier] ROWGUIDCOL  NOT NULL,
+ CONSTRAINT [PK_BAITHI] PRIMARY KEY CLUSTERED 
+(
+	[CauHoi] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+CREATE TABLE [dbo].[BAITHI] ADD  CONSTRAINT [MSmerge_df_rowguid_6CFAB7D3B00E43EEBBFBEB5F847FE53E]  DEFAULT (newsequentialid()) FOR [rowguid]
+GO
+
+CREATE  TABLE [dbo].[BAITHI]  WITH NOCHECK ADD  CONSTRAINT [repl_identity_range_C3203267_994F_4F4F_BB23_AA55C9D6A8D9] CHECK NOT FOR REPLICATION (([CauHoi]>(25702) AND [CauHoi]<=(26702) OR [CauHoi]>(26702) AND [CauHoi]<=(27702)))
+GO
+
+CREATE  TABLE [dbo].[BAITHI] CHECK CONSTRAINT [repl_identity_range_C3203267_994F_4F4F_BB23_AA55C9D6A8D9]
+GO
+
+
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_BAITHI]    Script Date: 11/29/2021 9:50:24 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_BAITHI] @maLop char(8) , @maSV char(8), @maMH char(5), @lan smallint
+
+AS 
+	DECLARE @ngayThi datetime, @soCauThi int, @trinhDo nchar(1), @maBD int, @res int, @subRes INT, @TrinhDoDuoi nchar(1),
+	 @CauDuoi INT, @CauDuoi2 INT ,@CauCUng INT
+
+	
+	-- res: so cau tim duoc trong BO DE
+	SET XACT_ABORT ON
+	BEGIN TRANSACTION
+
+	BEGIN TRY
+	   -- select GIAOVIEN_DANGKI
+		SELECT  @ngayThi = NGAYTHI, @soCauThi = SOCAUTHI, @trinhDo = TRINHDO FROM GIAOVIEN_DANGKY WHERE MAMH = @maMH AND MALOP = @maLop AND LAN = @lan
+		
+		--insert bang diem
+		SAVE TRANSACTION _BANGDIEM
+
+		INSERT INTO BANGDIEM(MASV, MAMH, LAN, NGAYTHI)
+		VALUES (@maSV, @maMH, @lan, @ngayThi);
+		SELECT @maBD = SCOPE_IDENTITY()
+
+		-- random cau hoi + insert bai thi
+		--Trình độ A
+		IF(@trinhDo = 'A')
+		BEGIN 
+			SET @TrinhDoDuoi = 'B'
+		END
+		--Trình độ B
+		ELSE IF(@trinhDo = 'B')
+		BEGIN 
+			SET @TrinhDoDuoi = 'C'
+		END
+
+		--Trình độ C
+		IF(@trinhDo = 'C')
+		BEGIN
+		SELECT @res = COUNT(CAUHOI) FROM BODE 
+		WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+
+			IF(@res >= @soCauThi)
+			BEGIN
+				INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+				SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD FROM BODE 
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+				ORDER BY  NEWID()
+
+				-- Trả về kết quả 
+				SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD
+
+			END
+			else if(@res < @soCauThi)
+			BEGIN
+				SELECT @subRes = COUNT(CAUHOI) FROM BODE 
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+				
+				if(@subRes < @soCauThi - @res)
+					BEGIN
+						ROLLBACK TRANSACTION _BANGDIEM
+						RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+						--SELECT N'Không đủ số câu để tạo đề!' 
+					END
+				else if(@subRes >= @soCauThi - @res)
+				BEGIN 
+					INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+					SELECT TOP (@res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					ORDER BY  NEWID()
+		
+					INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+					SELECT TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					ORDER BY  NEWID()
+					
+					-- trả về kết quả
+					SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD
+				END
+			END
+		END
+		-- trình độ A hoặc B
+		ELSE 
+        BEGIN
+			-- đổ câu hỏi vào bảng tạm,lấy toàn bộ trình độ A
+			SELECT  CAUHOI AS CAUHOI, NOIDUNG  AS NOIDUNG, A AS A,B AS B,C  AS  C,D  AS  D,DAP_AN AS DAP_AN, @maBD AS maBD INTO #DETHI FROM BODE 
+			WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+
+			SELECT @res = COUNT(CAUHOI) FROM BODE --lưu Số lượng trình độ A
+			WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+		
+			IF(@res >= @soCauThi)--if(A>=100%)
+			BEGIN
+				INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+				SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD FROM #DETHI -- lấy dữ liệu random từ bảng tạm #dethi
+				ORDER BY  NEWID()
+
+				-- Trả về kết quả để in câu hỏi thi ra màn hình
+				SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD
+			END
+
+			ELSE if(@res >= @soCauThi*0.7) -- if(A>=70%)
+			BEGIN
+				insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- Lưu B
+				SELECT  TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD FROM BODE 
+				WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+				ORDER BY  NEWID() --random
+
+				SELECT @CauDuoi = COUNT(CAUHOI) FROM BODE -- Lấy số lượng B
+				WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					
+				IF(@CauDuoi >= @soCauThi - @res)-- B >= 100% - A
+					BEGIN 
+						INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+						SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+						ORDER BY  NEWID()--random
+
+						SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+					END
+				ELSE --chuyển cơ sở
+					BEGIN
+						insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD ) -- Lấy A2
+						SELECT TOP (@soCauThi - @res - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+						WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						ORDER BY  NEWID() --random
+
+						SELECT @CauCUng = COUNT(CAUHOI) FROM BODE -- lưu số lượng câu A2
+						WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+						SELECT @CauDuoi2 = COUNT(CAUHOI) FROM BODE --Lưu số Lượng B2
+						WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+						IF(@CauCUng >= @soCauThi - @res - @CauDuoi ) --if(A2 >= 100-A-B)
+						BEGIN
+							INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+
+							SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+						END
+
+						ELSE IF(@CauDuoi2 >= @soCauThi - @res - @CauCUng - @CauDuoi)-- If( B2 >= 100 -A - A2 - B)
+						BEGIN
+							insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B2
+							SELECT TOP (@soCauThi - @res - @CauCUng - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+							ORDER BY  NEWID() --random
+
+							INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD) -- đổ dữ  liệu vào bài thi
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+
+							SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+						END 
+
+						ELSE 
+						BEGIN
+							ROLLBACK TRANSACTION _BANGDIEM
+							RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+							--SELECT N'Không đủ số câu để tạo đề!' 
+						END
+
+					END
+			END
+			ELSE 
+			BEGIN -- đề cùng loại ở cơ sở gốc không đủ
+				insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD ) -- Lấy A2
+				SELECT  TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD  FROM BODE 
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+				ORDER BY  NEWID() --random
+
+				SELECT @CauCUng = COUNT(CAUHOI) FROM BODE --Lưu số câu A2
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					
+				IF(@CauCUng >= @soCauThi - @res)-- A2 >= 100% - A
+					BEGIN 
+						INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+						SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+						ORDER BY  NEWID()--random
+
+						SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+					END
+				ELSE IF(@CauCUng >= @soCauThi*0.7 - @res) -- If(A2 >= 70%-A)
+				BEGIN
+						insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B cùng cs
+						SELECT TOP (@soCauThi - @res - @CauCUng) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+						WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV  IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						ORDER BY  NEWID() --random
+
+						SELECT @CauDuoi = COUNT(CAUHOI) FROM BODE -- Lưu số lượng B
+						WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+						SELECT @CauDuoi2 = COUNT(CAUHOI) FROM BODE --Lưu số lượng B2
+						WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+						IF(@CauDuoi >= @soCauThi - @res - @CauCUng ) --if(B >= 100-A-A2)
+						BEGIN
+							INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD)
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+
+							SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+						END
+
+						ELSE IF(@CauDuoi2 >= @soCauThi - @res - @CauCUng - @CauDuoi)-- If( B2 >= 100 -A - A2 - B)
+						BEGIN
+							insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B2
+							SELECT TOP (@soCauThi - @res - @CauCUng - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+							ORDER BY  NEWID() --random
+
+							INSERT INTO BAITHI (CauSo, NoiDung, A, B, C, D,DapAn, MaBD) -- đổ dữ  liệu vào bài thi
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+
+							SELECT CauHoi,CauSo,NoiDung, A,B,C,D, DapAn, MaBD FROM BAITHI WHERE MaBD = @maBD -- In kết quả để thi
+						END 
+
+						ELSE 
+						BEGIN
+							ROLLBACK TRANSACTION _BANGDIEM
+							RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+							--SELECT N'Không đủ số câu để tạo đề!' 
+						END
+
+				END
+				ELSE 
+				BEGIN
+					ROLLBACK TRANSACTION _BANGDIEM
+					RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+					--SELECT N'Không đủ số câu để tạo đề!' 
+				END
+			END
+		END-- end trình độ A hoặc B
+COMMIT
+	END TRY
+	BEGIN CATCH
+	   ROLLBACK
+	   DECLARE @ErrorMessage VARCHAR(2000)
+	   SELECT @ErrorMessage = 'Lỗi: ' + ERROR_MESSAGE()
+	   --RAISERROR(@ErrorMessage, 16, 1)
+	END CATCH
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_chuyenKhoa]    Script Date: 11/29/2021 9:51:01 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[sp_chuyenKhoa](@MAKH nchar(8),
+							   @MAGV nchar(8))
+    AS
+    BEGIN
+        UPDATE dbo.GIAOVIEN 
+		SET MAKH = @MAKH
+		WHERE MAGV = @MAGV
+	IF  exists(SELECT * from  dbo.GIAOVIEN where MAGV = @MAGV AND MAKH = @MAKH)
+   		raiserror ('Chuyển khoa thành công',16,1)
+	ELSE
+        raiserror ('Chuyển khoa thất bại',16,1)
+    END;
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_CHUYENLOP]    Script Date: 11/29/2021 9:51:08 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  PROCEDURE [dbo].[SP_CHUYENLOP]
+	(@MALOP char(8),
+	 @MASV char(8))
+    AS
+    BEGIN
+        UPDATE dbo.SINHVIEN 
+		SET MALOP = @MALOP
+		WHERE MASV = @MASV
+	IF  exists(SELECT * from  dbo.SINHVIEN where MASV = @MASV AND MALOP = @MALOP)
+   		raiserror ('Chuyển lớp thành công',16,1)
+	ELSE
+        raiserror ('Chuyển lớp thất bại',16,1)
+    END;
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DanhSach_DK_Thi]    Script Date: 11/29/2021 9:51:21 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_DanhSach_DK_Thi]
+@fromDate datetime,
+@toDate datetime
+AS
+
+	SELECT DISTINCT LOP.TENLOP, MONHOC.TENMH, CONCAT(GIAOVIEN.HO,' ',GIAOVIEN.TEN) AS HOTEN, GVDK.SOCAUTHI, CONVERT(DATE, GVDK.NGAYTHI) AS NGAYTHI, dbo.checkMH(MONHOC.MAMH) AS DATHI  FROM GIAOVIEN_DANGKY GVDK 
+	inner join LOP ON ( (GVDK.NGAYTHI BETWEEN @fromDate AND @toDate) AND lOP.MALOP = GVDK.MALOP)
+	inner join MONHOC ON (GVDK.MAMH = MONHOC.MAMH)
+	inner join GIAOVIEN ON (GVDK.MAGV = GIAOVIEN.MAGV)
+
+	ORDER BY NGAYTHI ASC
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DSBODE]    Script Date: 11/29/2021 9:51:28 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_DSBODE]
+  @MAMH nchar(5)
+AS
+BEGIN
+	SELECT * FROM dbo.BODE WHERE MAMH = @MAMH
+END
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DSLanThi]    Script Date: 11/29/2021 9:51:34 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_DSLanThi]
+@maSV char(8),
+@maMH char(5)
+
+AS 
+	BEGIN
+		SELECT LAN FROM BANGDIEM WHERE BANGDIEM.MASV = @maSV AND BANGDIEM.MAMH =@maMH AND BANGDIEM.DIEM IS NULL
+	END;
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DSLanThiDK]    Script Date: 11/29/2021 9:51:40 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_DSLanThiDK]
+@maMH char(5),
+@maLop char(8)
+AS
+BEGIN
+		SELECT DISTINCT  GVDK.LAN FROM GIAOVIEN_DANGKY GVDK INNER JOIN MONHOC ON  (GVDK.MALOP=@maLop AND GVDK.MAMH=@maMH AND GVDK.MAMH=MONHOC.MAMH)
+END
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DSLanThiThuGV]    Script Date: 11/29/2021 9:51:46 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_DSLanThiThuGV]
+@maMH char(5),
+@maLop char(8)
+
+AS 
+	
+BEGIN
+		SELECT DISTINCT  GVDK.LAN FROM GIAOVIEN_DANGKY GVDK 
+		INNER JOIN MONHOC ON  (GVDK.MALOP=@maLop AND GVDK.MAMH=@maMH AND GVDK.MAMH=MONHOC.MAMH)
+END
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_DSMHDK]    Script Date: 11/29/2021 9:51:51 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_DSMHDK]
+@maLop char(8)
+AS
+BEGIN
+		SELECT DISTINCT  MONHOC.MAMH, MONHOC.TENMH FROM GIAOVIEN_DANGKY GVDK INNER JOIN MONHOC ON  (GVDK.MALOP=@maLop AND GVDK.MAMH=MONHOC.MAMH)
+END
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_INBAITHI]    Script Date: 11/29/2021 9:51:56 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_INBAITHI]
+@maSV char(8),
+@maMH char(5),
+@lan smallint
+
+AS 
+ BEGIN
+	DECLARE @maBD int;
+
+	SELECT @maBD =  BANGDIEM.MABD FROM BANGDIEM WHERE BANGDIEM.MASV = @maSV AND BANGDIEM.MAMH = @maMH AND BANGDIEM.LAN = @lan;
+	SELECT BAITHI.CauSo, BAITHI.NoiDung, CONCAT(N'A. ' , CONVERT(NVARCHAR(MAX),BAITHI.A)) AS A ,CONCAT( N'B. ' , CONVERT(NVARCHAR(MAX),BAITHI.B)) AS B ,CONCAT( N'C. ' , CONVERT(NVARCHAR(MAX),BAITHI.C) ) AS C ,CONCAT(N'D. ' , CONVERT(NVARCHAR(MAX),BAITHI.D))  AS D , BAITHI.DapAn, BAITHI.DaChon FROM BAITHI WHERE BAITHI.MaBD = @maBD
+ END;USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_GVDK]    Script Date: 11/29/2021 9:52:05 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE procedure [dbo].[SP_KT_GVDK]
+  @MAMH char(5),
+  @MALOP char(8),
+  @LAN smallint
+AS
+
+IF exists(select * from dbo.GIAOVIEN_DANGKY where MAMH =@MAMH AND MALOP =@MALOP AND LAN= @LAN)
+	raiserror ('Đã tồn tại môn học, lớp, lần thi',16,1)
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_LOP_TONTAI]    Script Date: 11/29/2021 9:52:21 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE procedure [dbo].[SP_KT_LOP_TONTAI]
+  @MALOP char(8),
+  @TenLop varchar(40)
+AS
+
+IF exists(select MALOP from LINK2.TracNghiem.dbo.LOP where MALOP =@MALOP)
+	raiserror ('Mã lớp đã tồn tại, vui lòng nhập lại',16,1)
+
+ELSE IF exists(SELECT TENLOP from LINK2.TracNghiem.dbo.LOP where TENLOP =@TenLop)
+	raiserror ('Tên lớp đã tồn tại, vui lòng nhập lại',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_MA_BO_DE]    Script Date: 11/29/2021 9:52:27 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_KT_MA_BO_DE]
+  @MACAUHOI INT
+AS
+
+IF exists(select * from dbo.BODE where CAUHOI = @MACAUHOI)
+	raiserror ('Mã câu hỏi đã tồn tại, vui lòng nhập lại',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_MONHOC_TON_TAI]    Script Date: 11/29/2021 9:52:31 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_KT_MONHOC_TON_TAI]
+  @MAMH char(8),
+  @TENMH varchar(40)
+AS
+	If  exists(SELECT MAMH FROM  dbo.MONHOC WHERE MAMH = @MAMH)
+   		raiserror ('Mã môn học đã tồn tại, vui lòng nhập mã khác',16,1)
+
+	If  exists(SELECT TENMH FROM  dbo.MONHOC WHERE TENMH = @TENMH)
+		raiserror ('Tên môn học đã tồn tại, vui lòng nhập tên khác',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_TEN_Khoa_TONTAI]    Script Date: 11/29/2021 9:52:39 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_KT_TEN_Khoa_TONTAI]
+	@MAKH nchar(8),
+	@TENKH nvarchar(50)
+
+AS
+
+BEGIN
+	IF exists(select TENKH from LINK2.TracNghiem.dbo.khoa where TENKH =@TENKH AND MAKH != @MAKH)
+		raiserror ('Tên khoa đã tồn tại, vui lòng đặt tên khác',16,1)
+END
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_TEN_MONHOC_TON_TAI]    Script Date: 11/29/2021 9:52:45 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_KT_TEN_MONHOC_TON_TAI]
+  @MAMH char(5),
+  @TENMH varchar(40)
+AS
+	IF  exists(SELECT TENMH FROM  dbo.MONHOC WHERE TENMH = @TENMH AND MAMH!= @MAMH)
+		raiserror ('Tên môn học đã tồn tại, vui lòng nhập tên khác',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KT_XOA_GVDK]    Script Date: 11/29/2021 9:52:58 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_KT_XOA_GVDK]
+  @MAMH char(5),
+  @MALOP char(8),
+  @LAN smallint
+AS
+BEGIN
+	
+	SELECT BANGDIEM.MASV INTO ##tb_tamSV FROM dbo.SINHVIEN JOIN dbo.BANGDIEM ON BANGDIEM.MASV = SINHVIEN.MASV WHERE LAN = @LAN AND MAMH =@MAMH
+
+	SELECT dbo.SINHVIEN.MALOP INTO ##tamLop FROM ##tb_tamSV JOIN dbo.SINHVIEN ON SINHVIEN.MASV = ##tb_tamSV.MASV GROUP BY MALOP
+
+	IF exists(select * FROM ##tamLop WHERE MALOP = @MALOP)
+		raiserror ('Thông tin của giảng viên đăng ký này đã tồn tại trong bảng bảng điểm, Không thể xóa',16,1)
+
+	DROP TABLE ##tb_tamSV;
+	DROP TABLE ##tamLop;
+END
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTGV_TONTAI]    Script Date: 11/29/2021 9:53:03 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_KTGV_TONTAI]
+  @MAGV char(8)
+AS
+ 
+  
+If  exists(SELECT MAGV FROM  dbo.GIAOVIEN WHERE MAGV =@MAGV)
+   	raiserror ('Mã GV đã tồn tại, vui lòng chọn mã khác',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTKhoa_TONTAI]    Script Date: 11/29/2021 9:53:09 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_KTKhoa_TONTAI]
+  @MAKH nchar(8),
+  @TENKH nvarchar(50)
+AS
+
+BEGIN
+	IF exists(select MAKH from LINK2.TracNghiem.dbo.KHOA where MAKH =@MAKH)
+		raiserror ('Mã khoa đã tồn tại, vui lòng đặt mã khác',16,1)
+
+	IF exists(select TENKH from LINK2.TracNghiem.dbo.KHOA where TENKH =@TENKH)
+		raiserror ('Tên khoa đã tồn tại, vui lòng đặt tên khác',16,1)
+END
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTLANTHI]    Script Date: 11/29/2021 9:53:14 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROC [dbo].[SP_KTLANTHI]
+@MASV CHAR(8), @MAMH CHAR(5), @LAN smallint
+AS
+
+IF EXISTS (SELECT * FROM BANGDIEM WHERE MASV= @MASV AND MAMH =@MAMH AND LAN =@LAN)
+	raiserror ('Sinh viên đã thi lần này, không được thi lại',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTMALop_TONTAI]    Script Date: 11/29/2021 9:53:19 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_KTMALop_TONTAI]
+  @MALOP char(8),
+  @TenLop varchar(40)
+AS
+	IF exists(SELECT TENLOP from LINK2.TracNghiem.dbo.LOP where TENLOP =@TenLop AND MALOP!=@MALOP)
+		RAISERROR ('Tên lớp đã tồn tại, vui lòng nhập lại',16,1)
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTSV_DANGNHAP]    Script Date: 11/29/2021 9:53:28 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE procedure [dbo].[SP_KTSV_DANGNHAP]
+  @MASV  char(8)
+AS
+	IF exists(select masv from dbo.sinhvien where masv =@MASV)
+		SELECT * FROM dbo.SINHVIEN where masv =@MASV
+	else
+		raiserror ('Mã Sinh Viên không tồn tại trong danh sách, vui lòng kiểm tra lại',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_KTSV_TONTAI]    Script Date: 11/29/2021 9:53:33 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_KTSV_TONTAI] @X char(8)
+AS
+IF exists(select masv from LINK2.TracNghiem.dbo.SINHVIEN where masv =@X)
+		raiserror ('Mã Sinh Viên đã tồn tại, vui lòng nhập lại',16,1)
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_LanThiSV]    Script Date: 11/29/2021 9:53:37 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[SP_LanThiSV]
+@maSV char(8),
+@maMH char(5)
+
+AS 
+	BEGIN
+		SELECT LAN FROM BANGDIEM WHERE BANGDIEM.MASV = @maSV AND BANGDIEM.MAMH =@maMH AND BANGDIEM.DIEM IS NOT NULL
+	END;
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_LAY_TT_DANGNHAP]    Script Date: 11/29/2021 9:53:42 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROC [dbo].[SP_LAY_TT_DANGNHAP]
+@TENLOGIN NVARCHAR (50)
+AS
+DECLARE @TENUSER NVARCHAR(50)
+SELECT @TENUSER=NAME FROM sys.sysusers WHERE sid = SUSER_SID(@TENLOGIN)
+ 
+ SELECT USERNAME = @TENUSER, 
+  HOTEN = (SELECT HO+ ' '+ TEN FROM dbo.GIAOVIEN  WHERE MAGV = @TENUSER ),
+   TENNHOM= NAME
+   FROM sys.sysusers 
+   WHERE UID = (SELECT GROUPUID 
+                 FROM SYS.SYSMEMBERS 
+                   WHERE MEMBERUID= (SELECT UID FROM sys.sysusers 
+                                      WHERE NAME=@TENUSER))
+
+
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_LAY_TT_DANGNHAP_SV]    Script Date: 11/29/2021 9:53:47 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROC [dbo].[SP_LAY_TT_DANGNHAP_SV]
+@TENLOGIN NVARCHAR (50),
+@maSV char(8)
+AS
+DECLARE @TENUSER NVARCHAR(50)
+SELECT @TENUSER=NAME FROM sys.sysusers WHERE sid = SUSER_SID(@TENLOGIN)
+ 
+ SELECT USERNAME = @TENUSER, 
+  HOTEN = (SELECT HO+ ' '+ TEN FROM dbo.SINHVIEN  WHERE MASV = @maSV ),
+   TENNHOM= NAME
+   FROM sys.sysusers 
+   WHERE UID = (SELECT GROUPUID 
+                 FROM SYS.SYSMEMBERS 
+                   WHERE MEMBERUID= (SELECT UID FROM sys.sysusers 
+                                      WHERE NAME=@TENUSER))
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_MA_GV_CHUA_TAO_TK]    Script Date: 11/29/2021 9:53:51 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_MA_GV_CHUA_TAO_TK]
+AS
+BEGIN
+	SELECT name as MAGV,
+		   type_desc as type
+		   INTO  ##Users
+	FROM sys.database_principals
+	WHERE type not in ('A', 'G', 'R', 'X')
+		  and sid is not null
+		  and name != 'guest'
+	ORDER BY MAGV;
+
+	SELECT GIAOVIEN.MAGV , HO +' '+TEN AS TEN
+		FROM dbo.GIAOVIEN LEFT JOIN ##Users 
+			ON GIAOVIEN.MAGV =##Users.MAGV
+		where ##Users.MAGV IS NULL; 
+		--GROUP BY dbo.GIAOVIEN.MAGV
+
+	DROP TABLE ##Users
+END 
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_MonHocSV]    Script Date: 11/29/2021 9:53:55 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE PROCEDURE [dbo].[SP_MonHocSV]
+	@maSV CHAR(8)
+AS
+	BEGIN
+		SELECT DISTINCT MONHOC.MAMH, MONHOC.TENMH FROM BANGDIEM INNER JOIN MONHOC ON (BANGDIEM.MASV = @maSV AND BANGDIEM.MAMH = MONHOC.MAMH) 
+	END;
+	
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_PhucHoiSuaMH]    Script Date: 11/29/2021 9:54:18 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_PhucHoiSuaMH]
+  @MAMH char(5),
+  @TENMH varchar(40)
+AS
+	-- Trùng tên môn học
+	 IF  exists(SELECT TENMH FROM  dbo.MONHOC WHERE TENMH = @TENMH AND MAMH!= @MAMH)
+		BEGIN
+			RETURN 2
+		END
+	--  Sửa môn học
+	ELSE 
+		BEGIN
+			UPDATE dbo.MONHOC SET TENMH = @TENMH where MAMH=@MAMH
+			RETURN 0;
+		END
+
+		
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_PhucHoiThemMH]    Script Date: 11/29/2021 9:54:22 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  procedure [dbo].[SP_PhucHoiThemMH]
+  @MAMH nchar(5),
+  @TENMH varchar(40)
+AS
+	If  exists(SELECT MAMH FROM  dbo.MONHOC WHERE MAMH = @MAMH)
+		BEGIN
+			RETURN 1
+		END
+
+	 IF  exists(SELECT TENMH FROM  dbo.MONHOC WHERE TENMH = @TENMH)
+		BEGIN
+			RETURN 2
+		END
+	ELSE 
+		BEGIN
+			INSERT dbo.MONHOC 
+					( MAMH, TENMH )
+			VALUES  ( @MAMH, -- MAMH - nchar(5)
+					  @TENMH -- TENMH - varchar(40)
+					)
+			RETURN 0;
+		END
+
+		
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_PhucHoiXoaMH]    Script Date: 11/29/2021 9:54:26 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  procedure [dbo].[SP_PhucHoiXoaMH]
+  @MAMH char(5),
+  @TENMH varchar(40)
+AS
+	--Bảng điểm
+	 IF  exists(SELECT * FROM dbo.BANGDIEM WHERE MAMH = @MAMH)
+		BEGIN
+			RETURN 1
+		END
+	-- Bộ đề
+	ELSE IF  exists(SELECT * FROM dbo.BODE WHERE MAMH = @MAMH)
+		BEGIN
+			RETURN 2
+		END
+
+	--Giảng viên đăng ký
+	ELSE IF  exists(SELECT * FROM dbo.GIAOVIEN_DANGKY WHERE MAMH = @MAMH)
+		BEGIN
+			RETURN 3
+		END
+
+	-- Xóa môn học
+	ELSE 
+		BEGIN
+			DELETE dbo.MONHOC where MAMH=@MAMH
+			RETURN 0;
+		END
+
+		
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_TaoTaiKhoan]    Script Date: 11/29/2021 9:54:31 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROC [dbo].[sp_TaoTaiKhoan]
+	@LGNAME VARCHAR(50),
+	@PASS VARCHAR(50),
+	@USERNAME VARCHAR(50),
+	@ROLE VARCHAR(50)
+AS
+BEGIN
+  DECLARE @RET INT
+  EXEC @RET= SP_ADDLOGIN @LGNAME, @PASS,'TN'                     
+
+  IF (@RET =1)  -- LOGIN NAME BI TRUNG
+     RETURN 1
+
+  EXEC @RET= SP_GRANTDBACCESS @LGNAME, @USERNAME
+  IF (@RET =1)  -- USER  NAME BI TRUNG
+
+  BEGIN
+       EXEC SP_DROPLOGIN @LGNAME
+       RETURN 2
+  END
+
+  EXEC sp_addrolemember @ROLE, @USERNAME
+
+  IF @ROLE= 'Truong'  OR @ROLE ='Coso'
+	BEGIN
+		EXEC sp_addsrvrolemember @LGNAME, 'SecurityAdmin'
+		EXEC sp_addsrvrolemember @LGNAME, 'ProcessAdmin'
+	END
+
+  ELSE IF @ROLE= 'Giangvien'
+	BEGIN  
+		EXEC sp_addsrvrolemember @LGNAME, 'ProcessAdmin'
+	END
+
+	RETURN 0  -- THANH CONG
+END
+
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_ThiThu]    Script Date: 11/29/2021 9:54:35 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROCEDURE [dbo].[SP_ThiThu] 
+	@maLop nchar(8) , @maMH nchar(5), @lan smallint
+
+AS 
+	DECLARE @soCauThi int, @trinhDo nchar(1), @maBD int, @res int, @subRes INT, @TrinhDoDuoi nchar(1),
+	 @CauDuoi INT, @CauDuoi2 INT ,@CauCUng INT
+	-- res: so cau tim duoc trong BO DE
+	SET XACT_ABORT ON
+	
+	BEGIN TRY
+		create table #temp1 
+		(cauhoi int, noidung ntext, a ntext, b ntext, c ntext, d ntext, dap_an char(1))
+		
+	   -- select GIAOVIEN_DANGKI
+		SELECT  @soCauThi = SOCAUTHI, @trinhDo = TRINHDO FROM GIAOVIEN_DANGKY WHERE MAMH = @maMH AND MALOP = @maLop AND LAN = @lan
+	
+		--Trình độ A
+		IF(@trinhDo = 'A')
+		BEGIN 
+			SET @TrinhDoDuoi = 'B'
+		END
+		--Trình độ B
+		ELSE IF(@trinhDo = 'B')
+		BEGIN 
+			SET @TrinhDoDuoi = 'C'
+		END
+
+		--Trình độ C
+		IF(@trinhDo = 'C')
+		BEGIN
+			SELECT @res = COUNT(CAUHOI) FROM BODE 
+			WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+
+				IF(@res >= @soCauThi)
+				BEGIN
+					SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					ORDER BY  NEWID()
+				END
+				else if(@res < @soCauThi)
+				BEGIN
+					SELECT @subRes = COUNT(CAUHOI) FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+				
+					if(@subRes < @soCauThi - @res)
+						BEGIN-- thiếu đề
+							RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+						END
+					else if(@subRes >= @soCauThi - @res)
+					BEGIN 
+						INSERT INTO  #temp1 (cauhoi , noidung, a , b , c , d , dap_an  )
+						SELECT TOP (@res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN FROM BODE 
+						WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						ORDER BY  NEWID()
+		
+						INSERT INTO  #temp1 (cauhoi , noidung, a , b , c , d , dap_an  )
+						SELECT TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN FROM BODE 
+						WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						ORDER BY  NEWID()
+					
+						SELECT * from #temp1 
+					END
+				END
+			END
+			-- trình độ A hoặc B
+			ELSE 
+			BEGIN
+				-- đổ câu hỏi vào bảng tạm,lấy toàn bộ trình độ A
+				SELECT  CAUHOI AS CAUHOI, NOIDUNG  AS NOIDUNG, A AS A,B AS B,C  AS  C,D  AS  D,DAP_AN AS DAP_AN, @maBD AS maBD INTO #DETHI FROM BODE 
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+
+				SELECT @res = COUNT(CAUHOI) FROM BODE --lưu Số lượng trình độ A
+				WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+		
+				IF(@res >= @soCauThi)--if(A>=100%)
+				BEGIN
+					SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD FROM #DETHI -- lấy dữ liệu random từ bảng tạm #dethi
+					ORDER BY  NEWID()
+				END
+
+				ELSE if(@res >= @soCauThi*0.7) -- if(A>=70%)
+				BEGIN
+					insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- Lưu B
+					SELECT  TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD  FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					ORDER BY  NEWID() --random
+
+					SELECT @CauDuoi = COUNT(CAUHOI) FROM BODE -- Lấy số lượng B
+					WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					
+					IF(@CauDuoi >= @soCauThi - @res)-- B >= 100% - A
+						BEGIN 
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+						END
+					ELSE --chuyển cơ sở
+						BEGIN
+							insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD ) -- Lấy A2
+							SELECT TOP (@soCauThi - @res - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+							WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+							ORDER BY  NEWID() --random
+
+							SELECT @CauCUng = COUNT(CAUHOI) FROM BODE -- lưu số lượng câu A2
+							WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+							SELECT @CauDuoi2 = COUNT(CAUHOI) FROM BODE --Lưu số Lượng B2
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+							IF(@CauCUng >= @soCauThi - @res - @CauDuoi ) --if(A2 >= 100-A-B)
+							BEGIN
+								SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+								ORDER BY  NEWID()--random
+							END
+
+							ELSE IF(@CauDuoi2 >= @soCauThi - @res - @CauCUng - @CauDuoi)-- If( B2 >= 100 -A - A2 - B)
+							BEGIN
+								insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B2
+								SELECT TOP (@soCauThi - @res - @CauCUng - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+								WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+								ORDER BY  NEWID() --random
+
+								SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+								ORDER BY  NEWID()--random
+							END 
+
+							ELSE 
+							BEGIN-- thiếu đề
+								RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+							END
+
+						END
+				END
+				ELSE 
+				BEGIN -- đề cùng loại ở cơ sở gốc không đủ
+					insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD ) -- Lấy A2
+					SELECT  TOP (@soCauThi - @res) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN, @maBD  FROM BODE 
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					ORDER BY  NEWID() --random
+
+					SELECT @CauCUng = COUNT(CAUHOI) FROM BODE --Lưu số câu A2
+					WHERE MAMH = @maMH AND TRINHDO = @trinhDo AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+					
+					IF(@CauCUng >= @soCauThi - @res)-- A2 >= 100% - A
+						BEGIN 
+							SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+							ORDER BY  NEWID()--random
+						END
+					ELSE IF(@CauCUng >= @soCauThi*0.7 - @res) -- If(A2 >= 70%-A)
+					BEGIN
+							insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B cùng cs
+							SELECT TOP (@soCauThi - @res - @CauCUng) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV  IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+							ORDER BY  NEWID() --random
+
+							SELECT @CauDuoi = COUNT(CAUHOI) FROM BODE -- Lưu số lượng B
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+							SELECT @CauDuoi2 = COUNT(CAUHOI) FROM BODE --Lưu số lượng B2
+							WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+						
+							IF(@CauDuoi >= @soCauThi - @res - @CauCUng ) --if(B >= 100-A-A2)
+							BEGIN
+								SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+								ORDER BY  NEWID()--random
+							END
+
+							ELSE IF(@CauDuoi2 >= @soCauThi - @res - @CauCUng - @CauDuoi)-- If( B2 >= 100 -A - A2 - B)
+							BEGIN
+								insert into #DETHI (cauhoi, noidung, a , b , c , d , dap_an , maBD )-- lấy B2
+								SELECT TOP (@soCauThi - @res - @CauCUng - @CauDuoi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM BODE 
+								WHERE MAMH = @maMH AND TRINHDO = @TrinhDoDuoi AND MAGV NOT IN  (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA))  
+								ORDER BY  NEWID() --random
+
+								SELECT TOP (@soCauThi) CAUHOI, NOIDUNG, A,B,C,D,DAP_AN,@maBD FROM #DETHI 
+								ORDER BY  NEWID()--random
+							END 
+
+							ELSE 
+							BEGIN-- thiếu đề
+								RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+							END
+
+					END
+					ELSE 
+					BEGIN  -- thiếu đề
+						RAISERROR('Không đủ số câu để tạo đề!', 16, 1)
+					END
+				END
+		END-- end trình độ A hoặc B
+	END TRY
+	BEGIN CATCH
+	   DECLARE @ErrorMessage VARCHAR(2000)
+	   SELECT @ErrorMessage = 'Lỗi: ' + ERROR_MESSAGE()
+	   --RAISERROR(@ErrorMessage, 16, 1)
+	END CATCH
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_THONGTINLANTHI]    Script Date: 11/29/2021 9:54:39 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE  PROC [dbo].[SP_THONGTINLANTHI]
+@MALOP CHAR(8), @MAMH CHAR(5), @LAN smallint
+AS
+
+BEGIN
+	IF EXISTS (SELECT * FROM GIAOVIEN_DANGKY WHERE MALOP=@MALOP AND MAMH=@MAMH AND LAN=@LAN )
+		SELECT TRINHDO, SOCAUTHI, THOIGIAN,NGAYTHI FROM GIAOVIEN_DANGKY
+		WHERE MALOP=@MALOP AND MAMH=@MAMH AND LAN=@LAN
+
+	ELSE 
+		RAISERROR ('Không tìm thấy thông tin thi',16,1)
+	
+END
+USE [TracNghiem]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_XemKetQuaSV]    Script Date: 11/29/2021 9:54:43 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE PROCEDURE [dbo].[SP_XemKetQuaSV]
+
+@MaLop nchar(8),
+@MaMH nchar(5),
+@LanThi smallint
+
+AS
+	SELECT SV.MASV, SV.HO, SV.TEN, BD.DIEM, dbo.Num2Text(BD.DIEM) AS DIEMCHU FROM GIAOVIEN_DANGKY GVDK 
+	JOIN BANGDIEM BD ON ( GVDK.MALOP=@MaLop AND GVDK.MAMH=@MaMH AND GVDK.LAN=@LanThi AND BD.MAMH = GVDK.MAMH AND BD.LAN = GVDK.LAN)
+	JOIN SINHVIEN SV ON(SV.MASV = BD.MASV)
+
+
+
+USE [TracNghiem]
+GO
+
+/****** Object:  StoredProcedure [dbo].[SP_THI]    Script Date: 12/13/2021 3:14:07 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[SP_THI] (@MAMH CHAR(5), @TRINHDO CHAR(1), @SOCAUTHI SMALLINT)
+AS
+BEGIN
+	DECLARE @TRINHDO_THAP NCHAR(1), @DEM1 INT, @DEM2 INT, @DEM3 INT, @DEM4 INT, @ErorStr nvarchar(200)
+
+	CREATE TABLE #TAM (
+		CAUHOI INT,
+		MAMH CHAR(5),
+		TRINHDO CHAR(1),
+		NOIDUNG NVARCHAR(500),
+		A NVARCHAR(100),
+		B NVARCHAR(100),
+		C NVARCHAR(100),
+		D NVARCHAR(100),
+		DAP_AN CHAR(1),
+		MAGV CHAR(8)
+	);
+
+	IF @TRINHDO = 'A'
+	BEGIN
+		SET @TRINHDO_THAP = 'B'
+	END
+	IF @TRINHDO = 'B'
+	BEGIN
+		SET @TRINHDO_THAP = 'C'
+	END
+
+	IF @TRINHDO = 'A' OR @TRINHDO = 'B' --  VI DUOI TRINH DO C KHONG CO TRINH DO NAO NUA NEN XET TRUONG HOP RIENG
+	BEGIN
+		SET @DEM1 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM dbo.KHOA)))
+		IF @DEM1 >= @SOCAUTHI -- DU CAU THI
+		BEGIN
+			--RAISERROR('YES', 16, 1)
+			--DEM1 >= 100%
+			INSERT INTO #TAM SELECT TOP (@SOCAUTHI) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM BODE  WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+		END
+		ELSE IF @DEM1 >= FLOOR(@SOCAUTHI*0.7) -- BEN CS1 %CAU TDA >= 70%, LAY THEM CAU TDB
+		BEGIN
+			--LAY HET DEM1 ( 100% > DEM1 >= 70% )
+			INSERT INTO #TAM SELECT TOP (@DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+			
+			SET @DEM2 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO_THAP AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM dbo.KHOA)))
+			IF @DEM2 >= (@SOCAUTHI - @DEM1) -- DU CAU THI
+			BEGIN
+				--RAISERROR('YES', 16, 1)
+				--DA CO DEM1, DEM1+DEM2 >= 100%, LAY VUA DU DEM2
+				INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+			END
+			ELSE -- QUA BEN CS2 LAY THEM CAU TDA
+			BEGIN
+				--DA CO DEM1, LAY HET DEM2
+				INSERT INTO #TAM SELECT TOP (@DEM2) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+				 
+				SET @DEM3 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM dbo.KHOA)))
+				IF @DEM3 >= (@SOCAUTHI - @DEM1 - @DEM2) -- DU CAU THI
+				BEGIN
+					--RAISERROR('YES', 16, 1)
+					--DA CO DEM1, DEM2, LAY VUA DU DEM3
+					INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1 - @DEM2) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+				END
+				ELSE -- SO CAU TDA BEN CS2 CHUA DU LAY THEM CAU TDB
+				BEGIN
+					--DA CO DEM1, DEM2, LAY HET DEM3
+					INSERT INTO #TAM SELECT TOP (@DEM3) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+
+					SET @DEM4 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO_THAP AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM dbo.KHOA)))
+					IF @DEM4 >= (@SOCAUTHI - @DEM1 - @DEM2 - @DEM3) -- DU CAU THI
+					BEGIN
+						--RAISERROR('YES', 16, 1)
+						--DA CO DEM1, DEM2, DEM3, LAY VUA DU DEM4
+						INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1 - @DEM2 - @DEM3) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+					END
+					ELSE -- KHONG DU CAU THI, BAO LOI
+					BEGIN
+						SET @ErorStr = N'Thiếu câu hỏi thi! Thiếu "'+ rtrim(convert(nvarchar(200),@SoCauThi - (@DEM1 + @DEM2 + @DEM3 + @DEM4))) +N'" câu hỏi, cần thêm câu hỏi vào trình độ hiện tại (hoặc thấp hơn 1 bậc)!' 
+						RAISERROR(@ErorStr, 16, 1)
+						RETURN
+					END
+				END
+			END
+		END
+		ELSE -- BEN CS1 %CAU TDA < 70%, LAY THEM CAU TDA BEN CS2
+		BEGIN
+			--LAY HET DEM1
+			INSERT INTO #TAM SELECT TOP (@DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+
+			SET @DEM2 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM dbo.KHOA)))
+			IF @DEM2 >= (@SOCAUTHI - @DEM1) -- DU CAU THI
+			BEGIN
+				--RAISERROR('YES', 16, 1)
+				--DA CO DEM1, LAY VUA DU DEM2
+				INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+			END
+			ELSE IF @DEM2 >= (FLOOR(@SOCAUTHI*0.7) - @DEM1) -- %CAU TDA (CS1 + CS2) >= 70%, LAY CAU TDB BEN CS1 THEM
+			BEGIN
+				--DA CO DEM1, LAY HET DEM2
+				INSERT INTO #TAM SELECT TOP (@DEM2) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+
+				SET @DEM3 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO_THAP AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM dbo.KHOA)))
+				IF @DEM3 >= (@SOCAUTHI - @DEM1 - @DEM2) -- DU CAU THI
+				BEGIN
+					--RAISERROR('YES', 16, 1)
+					--DA CO DEM1, DEM2, LAY VUA DU DEM3
+					INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1 - @DEM2) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+				END
+				ELSE -- CAU TDB BEN CS1 CHUA DU, LAY THEM CAU TDB BEN CS2
+				BEGIN
+					--DA CO DEM1, DEM2, LAY HET DEM3
+					INSERT INTO #TAM SELECT TOP (@DEM3) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+
+					SET @DEM4 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO_THAP AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM dbo.KHOA)))
+					IF @DEM4 >= (@SOCAUTHI - @DEM1 - @DEM2 - @DEM3) -- DU CAU THI
+					BEGIN
+						--RAISERROR('YES', 16, 1)
+						--DA CO DEM1, DEM2, DEM3, LAY VUA DU DEM4
+						INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1 - @DEM2 - @DEM3) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE WHERE TRINHDO = @TRINHDO_THAP AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID()
+					END
+					ELSE -- KHONG DU CAU THI, BAO LOI
+					BEGIN
+						SET @ErorStr = N'Thiếu câu hỏi thi! Thiếu "'+ rtrim(convert(nvarchar(200),@SoCauThi - (@DEM1 + @DEM2 + @DEM3 + @DEM4))) +N'" câu hỏi, cần thêm câu hỏi vào trình độ hiện tại (hoặc thấp hơn 1 bậc)!' 
+						RAISERROR(@ErorStr, 16, 1)
+						RETURN
+					END
+				END
+			END
+			ELSE -- %CAU TDA (CS1 + CS2) < 70% => KHONG DU CAU THI, BAO LOI
+			BEGIN
+				SET @ErorStr = N'Thiếu câu hỏi thi! Thiếu "'+ rtrim(convert(nvarchar(200),FLOOR(@SoCauThi*0.7) - (@DEM1 + @DEM2))) +N'" câu hỏi cùng trình độ để đủ chỉ tiêu ít nhất 70 phần trăm câu hỏi cùng trình độ!' 
+				RAISERROR(@ErorStr, 16, 1)
+				RETURN
+			END
+		END
+	END
+	ELSE -- TRINH DO C
+	BEGIN
+		SET @DEM1 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM dbo.KHOA)))
+		IF @DEM1 >= @SOCAUTHI -- DU CAU THI
+		BEGIN
+			--RAISERROR('YES', 16, 1)
+			--LAY VUA DU DEM1
+			INSERT INTO #TAM SELECT TOP (@SOCAUTHI) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE  WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID() 
+		END
+		ELSE  -- BEN CS1 CHUA DU CAU THI
+		BEGIN
+			--LAY HET DEM1
+			INSERT INTO #TAM SELECT TOP (@DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE  WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID() 
+
+			SET @DEM2 = (SELECT COUNT(*) FROM dbo.BODE WHERE MAMH = @MAMH AND TRINHDO = @TRINHDO AND MAGV IN (SELECT MAGV FROM dbo.GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM dbo.KHOA)))
+			IF @DEM2 >= @SOCAUTHI - @DEM1 -- BEN CS2 + CS1 DU CAU THI
+			BEGIN
+				--RAISERROR('YES', 16, 1)
+				--DA CO DEM1, LAY VUA DU DEM2
+				INSERT INTO #TAM SELECT TOP (@SOCAUTHI - @DEM1) CAUHOI, MAMH, TRINHDO, NOIDUNG, A, B, C, D, DAP_AN, MAGV FROM dbo.BODE  WHERE TRINHDO = @TRINHDO AND MAMH = @MAMH AND MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE MAKH NOT IN (SELECT MAKH FROM KHOA)) ORDER BY NEWID() 
+			END
+			ELSE -- KHONG DU CAU THI, BAO LOI
+			BEGIN
+				SET @ErorStr = N'Thiếu câu hỏi thi! Thiếu "'+ rtrim(convert(nvarchar(200),@SoCauThi - (@DEM1 + @DEM2))) +N'" câu hỏi cùng trình độ !' 
+				RAISERROR(@ErorStr, 16, 1)
+				RETURN
+			END
+		END
+	END
+
+	SELECT * FROM #TAM ORDER BY NEWID() 
+END
+GO
+
